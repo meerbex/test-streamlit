@@ -1,51 +1,75 @@
-# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+# app.py
+from dotenv import load_dotenv, find_dotenv
+from langchain.callbacks import get_openai_callback
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import (SystemMessage, HumanMessage, AIMessage)
 import streamlit as st
-from streamlit.logger import get_logger
+import os
+os.environ['OPENAI_API_KEY'] = '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'
 
-LOGGER = get_logger(__name__)
-
-
-def run():
+def init_page():
     st.set_page_config(
-        page_title="Hello",
-        page_icon="👋",
+        page_title="Личный ChatGPT"
     )
+    st.header("Личный ChatGPT")
+    st.sidebar.title("Опции")
 
-    st.write("# Welcome to Streamlit! 👋")
 
-    st.sidebar.success("Select a demo above.")
+def init_messages():
+    clear_button = st.sidebar.button("Очистить Беседу", key="clear")
+    if clear_button or "messages" not in st.session_state:
+        st.session_state.messages = [
+            SystemMessage(
+                content="Вы - полезный AI ассистент. Отвечайте на вопросы в формате markdown.")
+        ]
+        st.session_state.costs = []
 
-    st.markdown(
-        """
-        Streamlit is an open-source app framework built specifically for
-        Machine Learning and Data Science projects.
-        **👈 Select a demo from the sidebar** to see some examples
-        of what Streamlit can do!
-        ### Want to learn more?
-        - Check out [streamlit.io](https://streamlit.io)
-        - Jump into our [documentation](https://docs.streamlit.io)
-        - Ask a question in our [community
-          forums](https://discuss.streamlit.io)
-        ### See more complex demos
-        - Use a neural net to [analyze the Udacity Self-driving Car Image
-          Dataset](https://github.com/streamlit/demo-self-driving)
-        - Explore a [New York City rideshare dataset](https://github.com/streamlit/demo-uber-nyc-pickups)
-    """
-    )
+
+def select_model():
+    model_name = st.sidebar.radio("Выберите LLM:",
+                                  ("gpt-3.5-turbo-0613", "gpt-4"))
+    temperature = st.sidebar.slider("Температура:", min_value=0.0,
+                                    max_value=1.0, value=0.0, step=0.01)
+    return ChatOpenAI(temperature=temperature, model_name=model_name)
+
+
+def get_answer(llm, messages):
+    with get_openai_callback() as cb:
+        answer = llm(messages)
+    return answer.content, cb.total_cost
+
+
+def main():
+    _ = load_dotenv(find_dotenv())
+
+    init_page()
+    llm = select_model()
+    init_messages()
+
+    # Проверка ввода пользователя
+    if user_input := st.chat_input("Введите ваш вопрос!"):
+        st.session_state.messages.append(HumanMessage(content=user_input))
+        with st.spinner("ChatGPT печатает ..."):
+            answer, cost = get_answer(llm, st.session_state.messages)
+        st.session_state.messages.append(AIMessage(content=answer))
+        st.session_state.costs.append(cost)
+
+    # Показ истории чата
+    messages = st.session_state.get("messages", [])
+    for message in messages:
+        if isinstance(message, AIMessage):
+            with st.chat_message("assistant"):
+                st.markdown(message.content)
+        elif isinstance(message, HumanMessage):
+            with st.chat_message("user"):
+                st.markdown(message.content)
+
+    costs = st.session_state.get("costs", [])
+    st.sidebar.markdown("## Стоимость")
+    st.sidebar.markdown(f"**Общая стоимость: ${sum(costs):.5f}**")
+    for cost in costs:
+        st.sidebar.markdown(f"- ${cost:.5f}")
 
 
 if __name__ == "__main__":
-    run()
+    main()
